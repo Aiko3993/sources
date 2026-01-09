@@ -96,16 +96,15 @@ pub fn get_home_layout() -> Result<HomeLayout> {
     let mut big_scroller_manga: Vec<Manga> = Vec::new();
 
     // Parse 漫画情报 HTML (index 7) - for Banner
-    if let Ok(ref mut resp) = responses[7] {
-        if let Ok(html) = resp.get_string() {
+    if let Ok(ref mut resp) = responses[7]
+        && let Ok(html) = resp.get_string() {
             banner_links = parse_manga_news_html(&html);
         }
-    }
 
     // Parse recommend/list response (index 0) - for BigScroller only
-    if let Ok(ref mut resp) = responses[0] {
-        if let Ok(data) = resp.get_json::<serde_json::Value>() {
-            if let Some(categories) = data.as_array() {
+    if let Ok(ref mut resp) = responses[0]
+        && let Ok(data) = resp.get_json::<serde_json::Value>()
+            && let Some(categories) = data.as_array() {
                 for cat in categories {
                     let cat_id = cat.get("category_id").and_then(|v| v.as_i64()).unwrap_or(0);
                     // category_id=109 is "大图推荐" - for BigScroller
@@ -114,27 +113,23 @@ pub fn get_home_layout() -> Result<HomeLayout> {
                     }
                 }
             }
-        }
-    }
 
     // Parse filter/list latest response (index 1) - for 最近更新
     let mut latest_entries: Vec<MangaWithChapter> = Vec::new();
-    if let Ok(ref mut resp) = responses[1] {
-        if let Ok(data) = resp.get_json::<serde_json::Value>() {
-            if let Some(list) = data.get("data")
+    if let Ok(ref mut resp) = responses[1]
+        && let Ok(data) = resp.get_json::<serde_json::Value>()
+            && let Some(list) = data.get("data")
                 .and_then(|d| d.get("comicList"))
                 .and_then(|v| v.as_array()) {
                 latest_entries = list.iter()
-                    .filter_map(|item| parse_manga_with_chapter(item))
+                    .filter_map(parse_manga_with_chapter)
                     .collect();
             }
-        }
-    }
 
     // Helper to parse rank page - simplified, only heat in description
     fn parse_rank_page(resp: &mut Response) -> Vec<Manga> {
-        if let Ok(data) = resp.get_json::<serde_json::Value>() {
-            if let Some(list) = data.get("data").and_then(|v| v.as_array()) {
+        if let Ok(data) = resp.get_json::<serde_json::Value>()
+            && let Some(list) = data.get("data").and_then(|v| v.as_array()) {
                 return list.iter()
                     .filter_map(|item| {
                         let id = item.get("comic_id")?.as_i64()?.to_string();
@@ -170,7 +165,6 @@ pub fn get_home_layout() -> Result<HomeLayout> {
                     })
                     .collect();
             }
-        }
         Vec::new()
     }
     
@@ -249,8 +243,8 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 
     // Helper to parse audience category scroller with author info
     fn parse_audience_scroller(resp: &mut Response) -> Vec<aidoku::Link> {
-        if let Ok(data) = resp.get_json::<serde_json::Value>() {
-            if let Some(list) = data.get("data")
+        if let Ok(data) = resp.get_json::<serde_json::Value>()
+            && let Some(list) = data.get("data")
                 .and_then(|d| d.get("comicList"))
                 .and_then(|v| v.as_array()) {
                 return list.iter()
@@ -272,7 +266,6 @@ pub fn get_home_layout() -> Result<HomeLayout> {
                     })
                     .collect();
             }
-        }
         Vec::new()
     }
 
@@ -452,9 +445,9 @@ fn fetch_banner_manga_details(category: &serde_json::Value) -> Vec<Manga> {
         
         let (manga_id, banner_title, _) = &banner_data[idx];
         
-        if let Ok(mut resp) = resp_result {
-            if let Ok(data) = resp.get_json::<serde_json::Value>() {
-                if let Some(manga_data) = data.get("data").and_then(|d| d.get("data")) {
+        if let Ok(mut resp) = resp_result
+            && let Ok(data) = resp.get_json::<serde_json::Value>()
+                && let Some(manga_data) = data.get("data").and_then(|d| d.get("data")) {
                     let title: String = manga_data.get("title")
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
@@ -501,8 +494,6 @@ fn fetch_banner_manga_details(category: &serde_json::Value) -> Vec<Manga> {
                         ..Default::default()
                     });
                 }
-            }
-        }
     }
     
     entries

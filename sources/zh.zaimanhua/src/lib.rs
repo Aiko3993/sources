@@ -40,7 +40,7 @@ fn get_api_request(url: &str) -> Result<Request> {
 
 /// Search manga by keyword
 fn search_by_keyword(keyword: &str, page: i32) -> Result<MangaPageResult> {
-    let encoded = encode_uri_component(keyword.to_string());
+    let encoded = encode_uri_component(keyword);
     let url = format!(
         "{}/search/index?keyword={}&source=0&page={}&size=20",
         V4_API_URL, encoded, page
@@ -121,7 +121,7 @@ fn browse_with_filters(filters: &[FilterValue], page: i32) -> Result<MangaPageRe
 
 /// Search manga by author name (complex hybrid search)
 fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
-    let encoded = encode_uri_component(author.to_string());
+    let encoded = encode_uri_component(author);
     
     // Helper: Check if author matches (handles "XX/YY" format)
     let author_matches = |manga_authors: &str| -> bool {
@@ -144,9 +144,9 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
     let search_url = format!("{}/search/index?keyword={}&source=0&page=1&size=50", V4_API_URL, encoded);
     
     // Use authenticated request to access restricted content
-    if let Ok(mut resp) = get_api_request(&search_url)?.send() {
-        if let Ok(json) = resp.get_json::<serde_json::Value>() {
-            if let Some(list) = json.get("data").and_then(|d| d.get("list")).and_then(|l| l.as_array()) {
+    if let Ok(mut resp) = get_api_request(&search_url)?.send()
+        && let Ok(json) = resp.get_json::<serde_json::Value>()
+            && let Some(list) = json.get("data").and_then(|d| d.get("list")).and_then(|l| l.as_array()) {
                 for manga in list {
                     let manga_authors = manga.get("authors").and_then(|a| a.as_str()).unwrap_or("");
                     
@@ -164,8 +164,6 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
                     }
                 }
             }
-        }
-    }
     
     // Step 2: Fallback core name search if no results
     if all_tag_ids.is_empty() && keyword_manga.is_empty() {
@@ -179,12 +177,12 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
         for core in [core_name, short_core.as_str()] {
             if core.is_empty() || core == author || !all_tag_ids.is_empty() { continue; }
             
-            let core_encoded = encode_uri_component(core.to_string());
+            let core_encoded = encode_uri_component(core);
             let core_url = format!("{}/search/index?keyword={}&source=0&page=1&size=30", V4_API_URL, core_encoded);
             
-            if let Ok(mut cresp) = get_api_request(&core_url)?.send() {
-                if let Ok(cjson) = cresp.get_json::<serde_json::Value>() {
-                    if let Some(clist) = cjson.get("data").and_then(|d| d.get("list")).and_then(|l| l.as_array()) {
+            if let Ok(mut cresp) = get_api_request(&core_url)?.send()
+                && let Ok(cjson) = cresp.get_json::<serde_json::Value>()
+                    && let Some(clist) = cjson.get("data").and_then(|d| d.get("list")).and_then(|l| l.as_array()) {
                         for manga in clist {
                             if !all_tag_ids.is_empty() { break; }
                             
@@ -202,8 +200,6 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
                             }
                         }
                     }
-                }
-            }
         }
     }
     
@@ -225,8 +221,8 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
         
         // Process responses
         for resp_result in tag_responses {
-            if let Ok(mut fr) = resp_result {
-                if let Ok(fj) = fr.get_json::<serde_json::Value>() {
+            if let Ok(mut fr) = resp_result
+                && let Ok(fj) = fr.get_json::<serde_json::Value>() {
                     if let Some(t) = fj.get("data").and_then(|d| d.get("total")).and_then(|v| v.as_i64()) {
                         tag_total = tag_total.max(t as i32);
                     }
@@ -234,7 +230,6 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
                         tag_manga.extend(cl.iter().cloned());
                     }
                 }
-            }
         }
     }
     

@@ -200,13 +200,11 @@ pub fn parse_manga_details(manga_data: &serde_json::Value, key: String) -> Resul
 
     // Status from array
     let mut status = MangaStatus::Unknown;
-    if let Some(status_arr) = manga_data.get("status").and_then(|v| v.as_array()) {
-        if let Some(first) = status_arr.first() {
-            if let Some(tag_name) = first.get("tag_name").and_then(|v| v.as_str()) {
+    if let Some(status_arr) = manga_data.get("status").and_then(|v| v.as_array())
+        && let Some(first) = status_arr.first()
+            && let Some(tag_name) = first.get("tag_name").and_then(|v| v.as_str()) {
                 status = parse_status(tag_name);
             }
-        }
-    }
 
     Ok(Manga {
         key,
