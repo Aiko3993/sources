@@ -351,13 +351,13 @@ impl Source for Zaimanhua {
         let json_val: serde_json::Value = response.get_json()?;
 
         // Check for API errors (e.g. deleted manga)
-        if let Some(errno) = json_val.get("errno").and_then(|v| v.as_i64()) {
-            if errno != 0 {
-                let errmsg = json_val.get("errmsg")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown error");
-                return Err(error!("{}", errmsg));
-            }
+        if let Some(errno) = json_val.get("errno").and_then(|v| v.as_i64())
+            && errno != 0
+        {
+            let errmsg = json_val.get("errmsg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            return Err(error!("{}", errmsg));
         }
 
         let manga_data = json_val
@@ -442,7 +442,7 @@ impl DeepLinkHandler for Zaimanhua {
             let id = if let Some(pos) = url.find("id=") {
                 url[pos + 3..].split('&').next().unwrap_or("")
             } else {
-                url.split('/').last().unwrap_or("")
+                url.split('/').next_back().unwrap_or("")
             };
             
             if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
@@ -479,10 +479,11 @@ impl BasicLoginHandler for Zaimanhua {
             Ok(Some(token)) => {
                 settings::set_token(&token);
                 // Auto check-in after login (if enabled and not already done)
-                if settings::get_auto_checkin() && !settings::has_checkin_flag() {
-                    if let Ok(true) = net::check_in(&token) {
-                        settings::set_last_checkin("done");
-                    }
+                if settings::get_auto_checkin()
+                    && !settings::has_checkin_flag()
+                    && let Ok(true) = net::check_in(&token)
+                {
+                    settings::set_last_checkin("done");
                 }
                 Ok(true)
             }
@@ -493,10 +494,10 @@ impl BasicLoginHandler for Zaimanhua {
 
 impl NotificationHandler for Zaimanhua {
     fn handle_notification(&self, notification: String) {
-        if notification == "checkin" {
-            if let Some(token) = settings::get_token() {
-                let _ = net::check_in(&token);
-            }
+        if notification == "checkin"
+            && let Some(token) = settings::get_token()
+        {
+            let _ = net::check_in(&token);
         }
     }
 }
@@ -529,9 +530,9 @@ impl DynamicSettings for Zaimanhua {
         
         // Prepare checkin subtitle
         let checkin_subtitle = user_info_opt.as_ref()
-            .and_then(|info| {
+            .map(|info| {
                 let is_signed = info.get("is_sign").and_then(|v| v.as_bool()).unwrap_or(false);
-                Some(if is_signed { "今日已签到" } else { "今日未签到" })
+                if is_signed { "今日已签到" } else { "今日未签到" }
             });
         
         // Account Group
