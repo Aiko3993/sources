@@ -272,20 +272,18 @@ fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
 fn collect_author_tags(manga_id: i64, tag_ids: &mut Vec<i64>) -> Result<()> {
     let detail_url = format!("{}/comic/detail/{}?channel=android", V4_API_URL, manga_id);
     // Use authenticated request to access restricted content
-    if let Ok(mut dr) = get_api_request(&detail_url)?.send() {
-        if let Ok(dj) = dr.get_json::<serde_json::Value>() {
-            if let Some(arr) = dj.get("data")
-                .and_then(|d| d.get("data"))
-                .and_then(|d| d.get("authors"))
-                .and_then(|a| a.as_array())
+    if let Ok(mut dr) = get_api_request(&detail_url)?.send()
+        && let Ok(dj) = dr.get_json::<serde_json::Value>()
+        && let Some(arr) = dj.get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("authors"))
+            .and_then(|a| a.as_array())
+    {
+        for au in arr {
+            if let Some(tid) = au.get("tag_id").and_then(|v| v.as_i64())
+                && tid > 0 && !tag_ids.contains(&tid)
             {
-                for au in arr {
-                    if let Some(tid) = au.get("tag_id").and_then(|v| v.as_i64()) {
-                        if tid > 0 && !tag_ids.contains(&tid) {
-                            tag_ids.push(tid);
-                        }
-                    }
-                }
+                tag_ids.push(tid);
             }
         }
     }
@@ -297,12 +295,12 @@ struct Zaimanhua;
 impl Source for Zaimanhua {
     fn new() -> Self {
         // Try auto check-in on source init if logged in and not checked in today
-        if let Some(token) = settings::get_token() {
-            if settings::get_auto_checkin() && !settings::has_checkin_flag() {
-                if let Ok(true) = net::check_in(&token) {
-                    settings::set_last_checkin("done");
-                }
-            }
+        if let Some(token) = settings::get_token()
+            && settings::get_auto_checkin()
+            && !settings::has_checkin_flag()
+            && let Ok(true) = net::check_in(&token)
+        {
+            settings::set_last_checkin("done");
         }
         Self
     }
@@ -325,10 +323,10 @@ impl Source for Zaimanhua {
         }
         
         // Check for keyword search
-        if let Some(ref keyword) = query {
-            if !keyword.is_empty() {
-                return search_by_keyword(keyword, page);
-            }
+        if let Some(ref keyword) = query
+            && !keyword.is_empty()
+        {
+            return search_by_keyword(keyword, page);
         }
         
         // Default: browse with filters
