@@ -7,7 +7,11 @@
 			"zh"
 		],
 		"contentRating": 1,
-		"url": "https://www.zaimanhua.com"
+		"urls": [
+			"https://www.zaimanhua.com",
+			"https://manhua.zaimanhua.com",
+			"https://m.zaimanhua.com"
+		]
 	},
 	"listings": [
 		{

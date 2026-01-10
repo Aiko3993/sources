@@ -1,7 +1,7 @@
 use aidoku::{
     Result,
     alloc::{String, format},
-    imports::net::{HttpMethod, Request},
+    imports::net::Request,
 };
 
 pub const ACCOUNT_API: &str = "https://account-api.zaimanhua.com/v1/";
@@ -18,7 +18,7 @@ pub fn get_request(url: &str) -> Result<Request> {
 }
 
 pub fn post_request(url: &str) -> Result<Request> {
-    Ok(Request::new(url, HttpMethod::Post)?
+    Ok(Request::post(url)?
         .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/x-www-form-urlencoded"))
 }
@@ -63,7 +63,7 @@ pub fn login(username: &str, password: &str) -> Result<Option<String>> {
 /// Perform daily check-in (POST request required!)
 pub fn check_in(token: &str) -> Result<bool> {
     let url = format!("{}task/sign_in", SIGN_API);
-    let mut response = Request::new(&url, HttpMethod::Post)?
+    let mut response = Request::post(&url)?
         .header("User-Agent", USER_AGENT)
         .header("Authorization", &format!("Bearer {}", token))
         .send()?;

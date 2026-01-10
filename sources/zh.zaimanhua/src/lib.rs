@@ -452,21 +452,9 @@ impl BasicLoginHandler for Zaimanhua {
             bail!("Invalid login key: `{key}`");
         }
 
-        // Handle logout (empty username means logout)
-        if username.is_empty() {
-            settings::clear_all();
-            return Ok(true);
-        }
-
         if password.is_empty() {
             return Ok(false);
         }
-
-        // Clear old account data before logging in with new credentials
-        settings::clear_all();
-        
-        settings::set_username(&username);
-        settings::set_password(&password);
 
         match net::login(&username, &password) {
             Ok(Some(token)) => {
@@ -487,10 +475,17 @@ impl BasicLoginHandler for Zaimanhua {
 
 impl NotificationHandler for Zaimanhua {
     fn handle_notification(&self, notification: String) {
-        if notification == "checkin"
-            && let Some(token) = settings::get_token()
-        {
-            let _ = net::check_in(&token);
+        match notification.as_str() {
+            "checkin" => {
+                if let Some(token) = settings::get_token() {
+                    let _ = net::check_in(&token);
+                }
+            }
+            "logout" => {
+                settings::clear_token();
+                settings::clear_checkin_flag();
+            }
+            _ => {}
         }
     }
 }
