@@ -125,8 +125,8 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 			}
 
 			big_scroller_manga = cat.data.into_iter()
-				// Filter hidden content if toggle is OFF
-				.filter(|item| item.obj_id > 0 && item.item_type == 1 && !crate::helpers::should_hide_item(item.hidden))
+				// Filter only Manga type (1)
+				.filter(|item| item.obj_id > 0 && item.item_type == 1)
 				.map(|item| {
 					let mut real_title = item.title.clone();
 					let mut manga_cover = item.cover.clone().unwrap_or_default();
@@ -171,10 +171,7 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		latest_entries = data
 			.comic_list
 			.into_iter()
-			.filter_map(|item| {
-				if crate::helpers::should_hide_item(item.hidden) { None }
-				else { Some(item.into_manga_with_chapter()) }
-			})
+			.map(|item| item.into_manga_with_chapter())
 			.collect();
 	}
 
@@ -185,11 +182,8 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		{
 			return list
 				.into_iter()
-				.filter_map(|item| {
-					if item.comic_id > 0 && !crate::helpers::should_hide_item(item.hidden) {
-						Some(item.into())
-					} else { None }
-				})
+				.filter(|item| item.comic_id > 0)
+				.map(Into::into)
 				.collect();
 		}
 		Vec::new()
@@ -278,9 +272,7 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 			resp.get_json_owned::<crate::models::ApiResponse<crate::models::FilterData>>()
 			&& let Some(data) = response.data
 		{
-			return data.comic_list.into_iter()
-				.filter(|item| !crate::helpers::should_hide_item(item.hidden))
-				.map(Into::into).collect();
+			return data.comic_list.into_iter().map(Into::into).collect();
 		}
 		Vec::new()
 	}

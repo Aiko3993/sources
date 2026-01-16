@@ -3,22 +3,10 @@ use crate::net;
 use crate::settings;
 use aidoku::{
 	Manga, MangaPageResult, Result,
-	alloc::{String, Vec, format, string::ToString, vec},
+	alloc::{String, Vec, string::ToString, vec},
 	imports::net::Request,
 };
 use hashbrown::HashSet;
-
-// === URL/ID Parsing Helpers ===
-
-/// Check if an item should be hidden based on settings and its hidden flag
-pub fn should_hide_item(hidden_status: Option<i32>) -> bool {
-	// If user wants to see hidden content (Enhanced Mode + Deep Search Toggle), never hide.
-	if settings::show_hidden_content() {
-		return false;
-	}
-	// Otherwise, hide if the item is explicitly marked as hidden (1).
-	hidden_status.unwrap_or(0) == 1
-}
 
 /// Parse manga ID from keyword (numeric ID or URL)
 fn parse_manga_id(keyword: &str) -> Option<String> {
@@ -80,121 +68,60 @@ pub fn search_by_keyword(keyword: &str, page: i32) -> Result<MangaPageResult> {
 		});
 	}
 
-	let keyword_lower = keyword.to_lowercase();
 	let mut token = settings::get_current_token();
 	let mut search_data: Option<models::SearchData> = None;
-	let mut hidden_items: Vec<models::FilterItem> = Vec::new();
-	let mut hidden_has_next = false;
 
-	// === Parallel Search Execution ===
-	// Batch the main search request together with hidden content scans (if enabled).
-	// This parallelism significantly reduces total latency.
+	// === Search API Request with Retry ===
 	for retry_count in 0..2 {
 		let token_ref = token.as_deref();
-		let mut requests = Vec::new();
-
 		let search_url = net::urls::search(keyword, page);
-		requests.push(
-			net::auth_request(&search_url, token_ref)
-				.unwrap_or_else(|_| net::get_request(&search_url).expect("Invalid URL"))
-		);
+		let request = net::auth_request(&search_url, token_ref)
+			.unwrap_or_else(|_| net::get_request(&search_url).expect("Invalid URL"));
 
-		// Hidden Content scans (paginated)
-		let hidden_start_page = (page - 1) * 5 + 1;
-		let should_scan_hidden = settings::show_hidden_content();
-
-		if should_scan_hidden {
-			for i in 0..5 {
-				let p = hidden_start_page + i;
-				let url = net::urls::filter_latest(p);
-				requests.push(
-					net::auth_request(&url, token_ref)
-						.unwrap_or_else(|_| net::get_request(&url).expect("Invalid URL"))
-				);
-			}
-		}
-
-		let responses = Request::send_all(requests);
-		if responses.is_empty() { break; }
-
-		// Parse responses & check for Auth Error (errno 99)
-		let mut needs_retry = false;
-		let mut parsing_search_data = None;
-		let mut parsing_hidden_items = Vec::new();
-
-		let mut response_iter = responses.into_iter();
-
-		// Handle Search Response (Index 0)
-		if let Some(Ok(resp)) = response_iter.next()
-			&& let Ok(api_resp) = resp.get_json_owned::<models::ApiResponse<models::SearchData>>()
+		if let Ok(response) = request.send()
+			&& let Ok(api_resp) = response.get_json_owned::<models::ApiResponse<models::SearchData>>()
 		{
 			if api_resp.errno.unwrap_or(0) == 99 {
-				needs_retry = true;
-			} else {
-				parsing_search_data = api_resp.data;
-			}
-		}
-
-		// Handle Hidden Responses (Index 1..)
-		if should_scan_hidden && !needs_retry {
-			for resp in response_iter.flatten() {
-				if let Ok(api_resp) = resp.get_json_owned::<models::ApiResponse<models::FilterData>>() {
-					if api_resp.errno.unwrap_or(0) == 99 {
-						needs_retry = true;
-						break;
-					}
-					if let Some(valid_data) = api_resp.data {
-						parsing_hidden_items.extend(valid_data.comic_list);
-					}
+				// Token expired, try refresh
+				if retry_count == 0
+					&& let Ok(Some(new_token)) = net::try_refresh_token()
+				{
+					token = Some(new_token);
+					continue;
 				}
+				break;
 			}
-		}
-
-		if needs_retry {
-			if retry_count == 0
-				&& let Ok(Some(new_token)) = net::try_refresh_token()
-			{
-				token = Some(new_token);
-				continue; // Retry loop with new token
-			}
-			// If login fails or already retried, stop/fail gracefully
+			search_data = api_resp.data;
 			break;
 		}
-
-		// Success - Commit data
-		search_data = parsing_search_data;
-		hidden_items = parsing_hidden_items;
-		break;
 	}
 
 	// === Result Merging ===
-
 	let mut results: Vec<Manga> = if let Some(data) = search_data {
 		data.list.into_iter().map(Into::into).collect()
 	} else {
 		Vec::new()
 	};
 
-	let existing_ids: HashSet<String> = results.iter().map(|m| m.key.clone()).collect();
-	let mut hidden_count = 0;
+	let mut seen_ids: HashSet<i64> = results
+		.iter()
+		.filter_map(|m| m.key.parse::<i64>().ok())
+		.collect();
 
-	if !hidden_items.is_empty() {
-		// Filter hidden items locally
-		for item in hidden_items {
-			let sid = item.id.to_string();
-			if existing_ids.contains(&sid) { continue; }
-
-			let name_lower = item.name.to_lowercase();
-			let auth_lower = item.authors.as_deref().unwrap_or("").to_lowercase();
-
-			if name_lower.contains(&keyword_lower) || auth_lower.contains(&keyword_lower) {
-				results.push(item.into());
-				hidden_count += 1;
-			}
-		}
-		
-		if hidden_count >= 1 {
+	// === Hidden Content Scan (if enabled) ===
+	let mut hidden_has_next = false;
+	if settings::deep_search_enabled() {
+		let hidden_manga = scan_hidden_content(
+			page,
+			keyword,
+			&mut seen_ids,
+			token.as_deref(),
+			true,   // match_by_name: true for keyword search
+			false,  // strict_mode: not applicable for name matching
+		);
+		if !hidden_manga.is_empty() {
 			hidden_has_next = true;
+			results.extend(hidden_manga);
 		}
 	}
 
@@ -254,9 +181,10 @@ pub fn search_by_author(author: &str, page: i32) -> Result<MangaPageResult> {
 
 	let mut merger = MangaMerger::new();
 
-	if settings::show_hidden_content() {
-		let hidden_manga = scan_hidden_content(page, author, merger.seen_ids_mut(), token_ref, exact_match_found);
-		merger.extend(hidden_manga);
+	if settings::deep_search_enabled() {
+		let mut hidden_seen: HashSet<i64> = HashSet::new();
+		let hidden_manga = scan_hidden_content(page, author, &mut hidden_seen, token_ref, false, exact_match_found);
+		merger.extend_unchecked(hidden_manga);
 	}
 
 	// Add results based on Strict Priority
@@ -304,7 +232,7 @@ fn collect_tags_from_search(
 ) -> Result<Vec<models::SearchItem>> {
 	let mut matched_items = Vec::new();
 
-	let url = format!("{}&source=0", net::urls::search(keyword, 1));
+	let url = net::urls::search_sized(&keyword.replace('&', " "), 1, 100);
 
 	if let Ok(response) = net::send_authed_request::<models::SearchData>(&url, token)
 		&& let Some(data) = response.data
@@ -435,28 +363,33 @@ fn fetch_manga_by_tags(tag_ids: &[i64], page: i32, token: Option<&str>) -> Resul
 
 fn scan_hidden_content(
 	page: i32,
-	target_author: &str,
+	target: &str,
 	seen_ids: &mut HashSet<i64>,
 	token: Option<&str>,
+	match_by_name: bool,
 	strict_mode: bool,
 ) -> Vec<Manga> {
 	let mut found_manga = Vec::new();
 	let hidden_start_page = (page - 1) * 5 + 1;
 	let scanner = net::HiddenContentScanner::new(hidden_start_page, 3, token);
+	let target_lower = target.to_lowercase();
 
 	for items in scanner {
 		let mut batch_found_any = false;
 		for item in items {
-			let is_match = if strict_mode {
-				// Exact match logic
-				if let Some(auth) = &item.authors {
-					auth.split(',').any(|a| a.trim() == target_author)
-				} else {
-					false
-				}
+			let is_match = if match_by_name {
+				// Name OR author contains target (for keyword search)
+				let name_lower = item.name.to_lowercase();
+				let auth_lower = item.authors.as_deref().unwrap_or("").to_lowercase();
+				name_lower.contains(&target_lower) || auth_lower.contains(&target_lower)
+			} else if strict_mode {
+				// Exact author match (Case Insensitive Fix)
+				item.authors.as_ref()
+					.map(|a| a.split(',').any(|s| s.trim().eq_ignore_ascii_case(target)))
+					.unwrap_or(false)
 			} else {
-				// Original fuzzy logic
-				item.matches_author(target_author)
+				// Fuzzy author match
+				item.matches_author(target)
 			};
 
 			if is_match && !seen_ids.contains(&item.id) {
@@ -532,6 +465,19 @@ impl MangaMerger {
 		}
 	}
 
+	/// Extend with items directly, marking IDs as seen but NOT checking for duplicates.
+	/// Use this for "trusted" sources (like hidden content) that handle their own dedup.
+	pub fn extend_unchecked<I: IntoIterator<Item = Manga>>(&mut self, iter: I) {
+		for manga in iter {
+			if let Ok(id) = manga.key.parse::<i64>()
+				&& id > 0
+			{
+				self.seen_ids.insert(id);
+			}
+			self.results.push(manga);
+		}
+	}
+
 	/// Consume and return the deduplicated results.
 	pub fn finish(self) -> Vec<Manga> {
 		self.results
@@ -545,11 +491,6 @@ impl MangaMerger {
 	/// Check if results are empty.
 	pub fn is_empty(&self) -> bool {
 		self.results.is_empty()
-	}
-
-	/// Get mutable access to the internal seen_ids set (for compatibility with existing code).
-	pub fn seen_ids_mut(&mut self) -> &mut HashSet<i64> {
-		&mut self.seen_ids
 	}
 }
 
@@ -575,9 +516,14 @@ fn extract_author_tags_from_detail(
 				return None;
 			}
 
-			if name == target_author && seen_strict.insert(tid) {
+			let name_trimmed = name.trim();
+			let target_trimmed = target_author.trim();
+			let target_lower = target_trimmed.to_lowercase();
+
+			if name_trimmed.eq_ignore_ascii_case(target_trimmed) && seen_strict.insert(tid) {
 				return Some((Some(tid), None)); // Strict match
-			} else if (name.contains(target_author) || target_author.contains(name.as_str()))
+			} else if (name_trimmed.to_lowercase().contains(&target_lower)
+				|| target_lower.contains(&name_trimmed.to_lowercase()))
 				&& seen_partial.insert(tid)
 			{
 				return Some((None, Some(tid))); // Partial match

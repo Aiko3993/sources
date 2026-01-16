@@ -9,6 +9,7 @@ const LAST_CHECKIN_KEY: &str = "lastCheckin";
 const ENHANCED_MODE_KEY: &str = "enhancedMode";
 const USERNAME_KEY: &str = "username";
 const PASSWORD_KEY: &str = "password";
+const JUST_LOGGED_IN_KEY: &str = "justLoggedIn";
 
 // === Authentication ===
 
@@ -43,6 +44,26 @@ pub fn get_current_token() -> Option<String> {
 	}
 }
 
+pub fn clear_token() {
+	defaults_set(TOKEN_KEY, DefaultValue::Null);
+	defaults_set(USERNAME_KEY, DefaultValue::Null);
+	defaults_set(PASSWORD_KEY, DefaultValue::Null);
+}
+
+// === Login State Flag (for logout detection) ===
+
+pub fn set_just_logged_in() {
+	defaults_set(JUST_LOGGED_IN_KEY, DefaultValue::Bool(true));
+}
+
+pub fn is_just_logged_in() -> bool {
+	defaults_get::<bool>(JUST_LOGGED_IN_KEY).unwrap_or(false)
+}
+
+pub fn clear_just_logged_in() {
+	defaults_set(JUST_LOGGED_IN_KEY, DefaultValue::Null);
+}
+
 // === Daily Check-in Logic ===
 
 pub fn get_auto_checkin() -> bool {
@@ -73,7 +94,7 @@ pub fn clear_checkin_flag() {
 
 // === Enhanced Mode & Hidden Content ===
 
-const SHOW_HIDDEN_CONTENT_KEY: &str = "showHiddenContent";
+const DEEP_SEARCH_KEY: &str = "deepSearch";
 const MIN_ENHANCED_LEVEL: i32 = 1;
 
 /// Check if user meets minimum level requirement for enhanced features
@@ -81,7 +102,7 @@ pub fn user_meets_level_requirement() -> bool {
 	if let Some(cache) = get_user_cache() {
 		cache.level >= MIN_ENHANCED_LEVEL
 	} else {
-		false // No cache = unknown level, require refresh first
+		false // No cache = require login to enable enhanced mode
 	}
 }
 
@@ -92,9 +113,9 @@ pub fn get_enhanced_mode() -> bool {
 		&& user_meets_level_requirement()
 }
 
-/// Show hidden content when both Enhanced Mode and Show Hidden Content toggle are on
-pub fn show_hidden_content() -> bool {
-	get_enhanced_mode() && defaults_get::<bool>(SHOW_HIDDEN_CONTENT_KEY).unwrap_or(false)
+/// Deep Search: requires Enhanced Mode + toggle ON
+pub fn deep_search_enabled() -> bool {
+	get_enhanced_mode() && defaults_get::<bool>(DEEP_SEARCH_KEY).unwrap_or(false)
 }
 
 // === Proxy Mode ===

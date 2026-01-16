@@ -478,7 +478,6 @@ pub struct RecommendItem {
 	#[serde(rename = "type")]
 	pub item_type: i64,
 	pub cover: Option<String>,
-	pub hidden: Option<i32>,
 }
 
 // === Auth & User Info ===

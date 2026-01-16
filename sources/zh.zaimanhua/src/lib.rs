@@ -33,7 +33,7 @@ struct Zaimanhua;
 
 impl Source for Zaimanhua {
 	fn new() -> Self {
-		set_rate_limit(100, 1, TimeUnit::Seconds); // 10 requests per second
+		set_rate_limit(100, 1, TimeUnit::Seconds);
 		Self
 	}
 
@@ -88,10 +88,7 @@ impl Source for Zaimanhua {
 			let url = net::urls::rank(by_time, page);
 			let response: models::ApiResponse<Vec<models::RankItem>> =
 				net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
-			let data: Vec<models::RankItem> = response.data.unwrap_or_default()
-				.into_iter()
-				.filter(|item| !helpers::should_hide_item(item.hidden))
-				.collect();
+			let data: Vec<models::RankItem> = response.data.unwrap_or_default();
 			if data.is_empty() {
 				return Ok(MangaPageResult { entries: Vec::new(), has_next_page: false });
 			}
@@ -110,7 +107,7 @@ impl Source for Zaimanhua {
 		let response: models::ApiResponse<models::FilterData> =
 			net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
 		let data = response.data
-			.map(|d| d.comic_list.into_iter().filter(|item| !helpers::should_hide_item(item.hidden)).collect())
+			.map(|d| d.comic_list)
 			.ok_or_else(|| error!("Missing filter data"))?;
 		Ok(models::manga_list_from_filter(data))
 	}
@@ -251,6 +248,7 @@ impl BasicLoginHandler for Zaimanhua {
 			Ok(Some(token)) => {
 				settings::set_token(&token);
 				settings::set_credentials(&username, &password);
+				settings::set_just_logged_in();
 
 				// Update user profile immediately upon login
 				let _ = net::refresh_user_profile(&token);
@@ -275,12 +273,15 @@ impl BasicLoginHandler for Zaimanhua {
 impl NotificationHandler for Zaimanhua {
 	fn handle_notification(&self, notification: String) {
 		if notification.as_str() == "login" {
-			// Token-based logout detection
-			// If token is gone, user logged out - clear transient data only
-			if settings::get_token().is_none() {
+			// Flag-based logout detection
+			if settings::is_just_logged_in() {
+				// Just logged in - clear flag, don't logout
+				settings::clear_just_logged_in();
+			} else {
+				// Not just logged in = user logged out
+				settings::clear_token();
 				settings::clear_checkin_flag();
 				settings::clear_user_cache();
-				// Preserve user preferences (enhancedMode, showHiddenContent)
 			}
 		}
 	}

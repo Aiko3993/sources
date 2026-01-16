@@ -24,14 +24,15 @@ pub mod urls {
 			V4_API_URL, encode_uri_component(keyword), page)
 	}
 
+	/// Build search API URL with custom size (for author search)
+	pub fn search_sized(keyword: &str, page: i32, size: i32) -> String {
+		format!("{}/search/index?keyword={}&source=0&page={}&size={}",
+			V4_API_URL, encode_uri_component(keyword), page, size)
+	}
+
 	/// Build filter/list API URL with query string
 	pub fn filter(query_string: &str, page: i32) -> String {
 		format!("{}/comic/filter/list?{}&page={}", V4_API_URL, query_string, page)
-	}
-
-	/// Build filter/list API URL with sortType only (latest updates)
-	pub fn filter_latest(page: i32) -> String {
-		format!("{}/comic/filter/list?sortType=1&page={}", V4_API_URL, page)
 	}
 
 	/// Build filter/list API URL with sortType and size (for Home page)

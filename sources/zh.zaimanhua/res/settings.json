@@ -37,9 +37,9 @@
 			},
 			{
 				"type": "switch",
-				"key": "showHiddenContent",
-				"title": "隐藏内容",
-				"subtitle": "搜索与浏览隐藏内容",
+				"key": "deepSearch",
+				"title": "深度检索",
+				"subtitle": "搜索隐藏内容",
 				"default": false,
 				"requires": "enhancedMode",
 				"refreshes": [
