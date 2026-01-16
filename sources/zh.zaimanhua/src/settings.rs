@@ -4,11 +4,9 @@ use aidoku::{
 };
 
 const TOKEN_KEY: &str = "auth_token";
-const JUST_LOGGED_IN_KEY: &str = "justLoggedIn";
 const AUTO_CHECKIN_KEY: &str = "autoCheckin";
 const LAST_CHECKIN_KEY: &str = "lastCheckin";
 const ENHANCED_MODE_KEY: &str = "enhancedMode";
-const SHOW_HIDDEN_KEY: &str = "showHiddenContent";
 const USERNAME_KEY: &str = "username";
 const PASSWORD_KEY: &str = "password";
 
@@ -37,32 +35,12 @@ pub fn set_token(token: &str) {
 	defaults_set(TOKEN_KEY, DefaultValue::String(token.to_string()));
 }
 
-pub fn clear_token() {
-	defaults_set(TOKEN_KEY, DefaultValue::Null);
-	defaults_set(USERNAME_KEY, DefaultValue::Null);
-	defaults_set(PASSWORD_KEY, DefaultValue::Null);
-}
-
 pub fn get_current_token() -> Option<String> {
 	if get_enhanced_mode() {
 		get_token()
 	} else {
 		None
 	}
-}
-
-// === Login State Flag (for logout detection) ===
-
-pub fn set_just_logged_in() {
-	defaults_set(JUST_LOGGED_IN_KEY, DefaultValue::Bool(true));
-}
-
-pub fn is_just_logged_in() -> bool {
-	defaults_get::<bool>(JUST_LOGGED_IN_KEY).unwrap_or(false)
-}
-
-pub fn clear_just_logged_in() {
-	defaults_set(JUST_LOGGED_IN_KEY, DefaultValue::Null);
 }
 
 // === Daily Check-in Logic ===
@@ -95,12 +73,28 @@ pub fn clear_checkin_flag() {
 
 // === Enhanced Mode & Hidden Content ===
 
-pub fn get_enhanced_mode() -> bool {
-	defaults_get::<bool>(ENHANCED_MODE_KEY).unwrap_or(false) && get_token().is_some()
+const SHOW_HIDDEN_CONTENT_KEY: &str = "showHiddenContent";
+const MIN_ENHANCED_LEVEL: i32 = 1;
+
+/// Check if user meets minimum level requirement for enhanced features
+pub fn user_meets_level_requirement() -> bool {
+	if let Some(cache) = get_user_cache() {
+		cache.level >= MIN_ENHANCED_LEVEL
+	} else {
+		false // No cache = unknown level, require refresh first
+	}
 }
 
+/// Enhanced mode requires: toggle ON + valid token + Lv.1+
+pub fn get_enhanced_mode() -> bool {
+	defaults_get::<bool>(ENHANCED_MODE_KEY).unwrap_or(false) 
+		&& get_token().is_some()
+		&& user_meets_level_requirement()
+}
+
+/// Show hidden content when both Enhanced Mode and Show Hidden Content toggle are on
 pub fn show_hidden_content() -> bool {
-	get_enhanced_mode() && defaults_get::<bool>(SHOW_HIDDEN_KEY).unwrap_or(false)
+	get_enhanced_mode() && defaults_get::<bool>(SHOW_HIDDEN_CONTENT_KEY).unwrap_or(false)
 }
 
 // === Proxy Mode ===
@@ -155,12 +149,4 @@ pub fn is_cache_stale() -> bool {
 		return (now as f64) - cache.timestamp >= 21600.0;
 	}
 	true
-}
-
-// === State Reset ===
-
-pub fn reset_dependent_settings() {
-	defaults_set(AUTO_CHECKIN_KEY, DefaultValue::Null);
-	defaults_set(ENHANCED_MODE_KEY, DefaultValue::Null);
-	defaults_set(SHOW_HIDDEN_KEY, DefaultValue::Null);
 }

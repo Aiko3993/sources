@@ -1,6 +1,5 @@
 use crate::net;
 use crate::settings;
-use crate::V4_API_URL;
 use aidoku::{
 	HomeComponent, HomeLayout, HomePartialResult, Listing, ListingKind, Manga, MangaStatus,
 	MangaWithChapter, Result,
@@ -69,18 +68,18 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 	let token = settings::get_current_token();
 	let token_ref = token.as_deref();
 
-	let recommend_url = format!("{}/comic/recommend/list", V4_API_URL);
-	let latest_url = format!("{}/comic/filter/list?sortType=1&page=1&size=20", V4_API_URL);
-	let rank_url = format!("{}/comic/rank/list?rank_type=0&by_time=2&page=1", V4_API_URL);
-	let shounen_url = format!("{}/comic/filter/list?cate=3262&size=20&page=1", V4_API_URL);
-	let shoujo_url = format!("{}/comic/filter/list?cate=3263&size=20&page=1", V4_API_URL);
-	let seinen_url = format!("{}/comic/filter/list?cate=3264&size=20&page=1", V4_API_URL);
-	let josei_url = format!("{}/comic/filter/list?cate=13626&size=20&page=1", V4_API_URL);
+	let recommend_url = net::urls::recommend();
+	let latest_url = net::urls::filter_latest_sized(1, 20);
+	let rank_url = net::urls::rank(2, 1);
+	let shounen_url = net::urls::filter_cate(3262, 1, 20);
+	let shoujo_url = net::urls::filter_cate(3263, 1, 20);
+	let seinen_url = net::urls::filter_cate(3264, 1, 20);
+	let josei_url = net::urls::filter_cate(13626, 1, 20);
 
 	let mut batch = net::RequestBatch::new();
 
 	// 0: banner
-	let manga_news_url = format!("{}/manhuaqingbao", crate::NEWS_URL);
+	let manga_news_url = net::urls::manga_news();
 	let slot_banner = batch.add_unless_blocked(&manga_news_url);
 
 	// 1-7: Standard requests
@@ -126,14 +125,14 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 			}
 
 			big_scroller_manga = cat.data.into_iter()
-				// Filter only Manga type (1) to avoid Topics/Ads
-				.filter(|item| item.obj_id > 0 && item.item_type == 1)
+				// Filter hidden content if toggle is OFF
+				.filter(|item| item.obj_id > 0 && item.item_type == 1 && !crate::helpers::should_hide_item(item.hidden))
 				.map(|item| {
 					let mut real_title = item.title.clone();
 					let mut manga_cover = item.cover.clone().unwrap_or_default();
 
 					// Fetch details for high-res assets
-					if let Ok(req) = net::get_request(&format!("{}/comic/detail/{}", V4_API_URL, item.obj_id))
+					if let Ok(req) = net::get_request(&net::urls::detail(item.obj_id))
 						&& let Ok(resp) = req.json_owned::<ApiResponse<DetailData>>()
 						&& let Some(detail_root) = resp.data
 						&& let Some(detail) = detail_root.data
@@ -172,7 +171,10 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		latest_entries = data
 			.comic_list
 			.into_iter()
-			.map(|item| item.into_manga_with_chapter())
+			.filter_map(|item| {
+				if crate::helpers::should_hide_item(item.hidden) { None }
+				else { Some(item.into_manga_with_chapter()) }
+			})
 			.collect();
 	}
 
@@ -183,8 +185,11 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		{
 			return list
 				.into_iter()
-				.filter(|item| item.comic_id > 0)
-				.map(Into::into)
+				.filter_map(|item| {
+					if item.comic_id > 0 && !crate::helpers::should_hide_item(item.hidden) {
+						Some(item.into())
+					} else { None }
+				})
 				.collect();
 		}
 		Vec::new()
@@ -203,7 +208,7 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 			subtitle: None,
 			value: aidoku::HomeComponentValue::ImageScroller {
 				links: banner_links,
-				auto_scroll_interval: Some(5.0),
+				auto_scroll_interval: None,
 				width: Some(252),
 				height: Some(162),
 			},
@@ -273,7 +278,9 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 			resp.get_json_owned::<crate::models::ApiResponse<crate::models::FilterData>>()
 			&& let Some(data) = response.data
 		{
-			return data.comic_list.into_iter().map(Into::into).collect();
+			return data.comic_list.into_iter()
+				.filter(|item| !crate::helpers::should_hide_item(item.hidden))
+				.map(Into::into).collect();
 		}
 		Vec::new()
 	}

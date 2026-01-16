@@ -85,6 +85,7 @@ pub struct FilterItem {
 	pub last_update_chapter_name: Option<String>,
 	pub last_update_chapter_id: Option<i64>,
 	pub last_updatetime: Option<i64>,
+	pub hidden: Option<i32>,
 }
 
 impl FilterItem {
@@ -196,6 +197,7 @@ pub struct RankItem {
 	pub cover: Option<String>,
 	pub authors: Option<String>,
 	pub status: Option<String>,
+	pub hidden: Option<i32>,
 	pub num: Option<i64>,
 }
 
@@ -423,8 +425,9 @@ fn parse_status(status_str: &str) -> MangaStatus {
 pub fn manga_list_from_filter(items: Vec<FilterItem>) -> MangaPageResult {
 	let entries: Vec<Manga> = items
 		.into_iter()
-		.filter(|item| item.id > 0)
-		.map(Into::into)
+		.filter_map(|item| {
+			if item.id > 0 { Some(item.into()) } else { None }
+		})
 		.collect();
 	let has_next_page = !entries.is_empty();
 	MangaPageResult {
@@ -436,8 +439,9 @@ pub fn manga_list_from_filter(items: Vec<FilterItem>) -> MangaPageResult {
 pub fn manga_list_from_ranks(items: Vec<RankItem>) -> MangaPageResult {
 	let entries: Vec<Manga> = items
 		.into_iter()
-		.filter(|item| item.comic_id > 0)
-		.map(Into::into)
+		.filter_map(|item| {
+			if item.comic_id > 0 { Some(item.into()) } else { None }
+		})
 		.collect();
 	let has_next_page = !entries.is_empty();
 	MangaPageResult {
@@ -474,6 +478,7 @@ pub struct RecommendItem {
 	#[serde(rename = "type")]
 	pub item_type: i64,
 	pub cover: Option<String>,
+	pub hidden: Option<i32>,
 }
 
 // === Auth & User Info ===

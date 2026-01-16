@@ -33,7 +33,7 @@ struct Zaimanhua;
 
 impl Source for Zaimanhua {
 	fn new() -> Self {
-		set_rate_limit(5, 1, TimeUnit::Seconds); // 5 requests per second
+		set_rate_limit(100, 1, TimeUnit::Seconds); // 10 requests per second
 		Self
 	}
 
@@ -85,10 +85,13 @@ impl Source for Zaimanhua {
 		// Handle rank mode
 		if let Some(mode @ ("1" | "2" | "3" | "4")) = rank_mode {
 			let by_time = mode.parse::<i32>().unwrap_or(1) - 1;
-			let url = format!("{}/comic/rank/list?rank_type=0&by_time={}&page={}", V4_API_URL, by_time, page);
+			let url = net::urls::rank(by_time, page);
 			let response: models::ApiResponse<Vec<models::RankItem>> =
 				net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
-			let data = response.data.unwrap_or_default();
+			let data: Vec<models::RankItem> = response.data.unwrap_or_default()
+				.into_iter()
+				.filter(|item| !helpers::should_hide_item(item.hidden))
+				.collect();
 			if data.is_empty() {
 				return Ok(MangaPageResult { entries: Vec::new(), has_next_page: false });
 			}
@@ -103,11 +106,11 @@ impl Source for Zaimanhua {
 		qs.push("zone", Some(zone.unwrap_or("0")));
 		qs.push("theme", Some(theme.unwrap_or("0")));
 
-		let url = format!("{}/comic/filter/list?{}&page={}&size=20", V4_API_URL, qs, page);
+		let url = format!("{}&size=20", net::urls::filter(&qs.to_string(), page));
 		let response: models::ApiResponse<models::FilterData> =
 			net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
 		let data = response.data
-			.map(|d| d.comic_list)
+			.map(|d| d.comic_list.into_iter().filter(|item| !helpers::should_hide_item(item.hidden)).collect())
 			.ok_or_else(|| error!("Missing filter data"))?;
 		Ok(models::manga_list_from_filter(data))
 	}
@@ -118,7 +121,7 @@ impl Source for Zaimanhua {
 		needs_details: bool,
 		needs_chapters: bool,
 	) -> Result<Manga> {
-		let url = format!("{}/comic/detail/{}?channel=android", V4_API_URL, manga.key);
+		let url = net::urls::detail(manga.key.parse::<i64>().unwrap_or(0));
 		let response: models::ApiResponse<models::DetailData> =
 			net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
 
@@ -155,7 +158,7 @@ impl Source for Zaimanhua {
 		let (comic_id, chapter_id) = chapter.key.split_once('/')
 			.unwrap_or((manga.key.as_str(), chapter.key.as_str()));
 
-		let url = format!("{}/comic/chapter/{}/{}", V4_API_URL, comic_id, chapter_id);
+		let url = net::urls::chapter(comic_id, chapter_id);
 		let response: models::ApiResponse<models::ChapterData> =
 			net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
 		let chapter_data = response.data.ok_or_else(|| error!("Missing chapter data"))?;
@@ -248,7 +251,6 @@ impl BasicLoginHandler for Zaimanhua {
 			Ok(Some(token)) => {
 				settings::set_token(&token);
 				settings::set_credentials(&username, &password);
-				settings::set_just_logged_in();
 
 				// Update user profile immediately upon login
 				let _ = net::refresh_user_profile(&token);
@@ -273,16 +275,12 @@ impl BasicLoginHandler for Zaimanhua {
 impl NotificationHandler for Zaimanhua {
 	fn handle_notification(&self, notification: String) {
 		if notification.as_str() == "login" {
-			// Flag-based logout detection
-			if settings::is_just_logged_in() {
-				// Just logged in - clear flag, don't logout
-				settings::clear_just_logged_in();
-			} else {
-				// Not just logged in = user logged out
-				settings::clear_token();
+			// Token-based logout detection
+			// If token is gone, user logged out - clear transient data only
+			if settings::get_token().is_none() {
 				settings::clear_checkin_flag();
 				settings::clear_user_cache();
-				settings::reset_dependent_settings();
+				// Preserve user preferences (enhancedMode, showHiddenContent)
 			}
 		}
 	}
@@ -299,15 +297,30 @@ impl DynamicSettings for Zaimanhua {
 		if settings::get_token().is_some() {
 			let (username, _) = settings::get_credentials().unwrap_or(("未知用户".into(), "".into()));
 
-			let (level_str, status_str) = if let Some(user_cache) = settings::get_user_cache() {
+			let (level_str, status_str, level_warning) = if let Some(user_cache) = settings::get_user_cache() {
 				let checkin_status = if user_cache.is_sign { "已签到" } else { "未签到" };
-				(format!("Lv.{}", user_cache.level), checkin_status.to_string())
+				let warning = if user_cache.level < 1 {
+					Some("※ 增强浏览需要等级达到 Lv.1 (绑定手机号码即可使用)")
+				} else {
+					None
+				};
+				(format!("Lv.{}", user_cache.level), checkin_status.to_string(), warning)
 			} else {
 				// Fallback for missing cache
-				("Lv.?".to_string(), "获取中...".to_string())
+				("Lv.?".to_string(), "获取中...".to_string(), None)
 			};
 
-			let footer_text = format!("用户：{} | 等级：{} | {}", username, level_str, status_str);
+			let mut footer_text = format!("用户：{} | 等级：{} | {}", username, level_str, status_str);
+			
+			// Enhanced mode active: show general note first
+			if settings::get_enhanced_mode() {
+				footer_text = format!("{}\n※ 访问内容受等级与时段限制", footer_text);
+			}
+			
+			// Level warning (when < Lv.1)
+			if let Some(warning) = level_warning {
+				footer_text = format!("{}\n{}", footer_text, warning);
+			}
 
 			settings.push(
 				GroupSetting {
@@ -335,7 +348,7 @@ impl ListingProvider for Zaimanhua {
 	fn get_manga_list(&self, listing: Listing, page: i32) -> Result<MangaPageResult> {
 		// Handle rank listings (use rank API)
 		if listing.id == "rank-monthly" {
-			let url = format!("{}/comic/rank/list?rank_type=0&by_time=2&page={}", V4_API_URL, page);
+			let url = net::urls::rank(2, page);
 			let response: models::ApiResponse<Vec<models::RankItem>> =
 				net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
 			let data = response.data.unwrap_or_default();
@@ -359,7 +372,7 @@ impl ListingProvider for Zaimanhua {
 				let token = settings::get_token()
 					.ok_or_else(|| aidoku::error!("请先登录以查看订阅列表"))?;
 
-				let url = format!("{}/comic/sub/list?status=0&firstLetter=&page={}&size=50", V4_API_URL, page);
+				let url = net::urls::sub_list(page);
 				let response: models::ApiResponse<models::SubscribeData> =
 					net::auth_request(&url, Some(&token))?.json_owned()?;
 				let data = response
@@ -371,7 +384,7 @@ impl ListingProvider for Zaimanhua {
 			_ => return Err(aidoku::error!("Unknown listing: {}", listing.id)),
 		};
 
-		let url = format!("{}/comic/filter/list?{}&page={}&size=20", V4_API_URL, filter_param, page);
+		let url = format!("{}&size=20", net::urls::filter(filter_param, page));
 		let response: models::ApiResponse<models::FilterData> =
 			net::auth_request(&url, settings::get_current_token().as_deref())?.json_owned()?;
 		let data = response
