@@ -282,6 +282,7 @@ impl NotificationHandler for Zaimanhua {
 				settings::clear_token();
 				settings::clear_checkin_flag();
 				settings::clear_user_cache();
+				settings::reset_dependent_settings();
 			}
 		}
 	}

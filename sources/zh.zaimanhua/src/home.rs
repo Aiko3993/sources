@@ -11,6 +11,8 @@ use aidoku::{
 
 use crate::models::{ApiResponse, DetailData};
 
+// === Public API ===
+
 /// Build the home page layout
 pub fn get_home_layout() -> Result<HomeLayout> {
 	// Silent background updates (check-in + cache refresh)
@@ -175,24 +177,10 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 			.collect();
 	}
 
-	fn parse_rank_page(resp: Response) -> Vec<Manga> {
-		if let Ok(response) =
-			resp.get_json_owned::<crate::models::ApiResponse<Vec<crate::models::RankItem>>>()
-			&& let Some(list) = response.data
-		{
-			return list
-				.into_iter()
-				.filter(|item| item.comic_id > 0)
-				.map(Into::into)
-				.collect();
-		}
-		Vec::new()
-	}
-
 	// 1 page = 10 items
 	let mut hot_entries: Vec<Manga> = Vec::new();
 	if let Some(resp) = resp_rank {
-		hot_entries.extend(parse_rank_page(resp));
+		hot_entries.extend(parse_rank_response(resp));
 	}
 
 	// Only show banner if links exist (proxy mode skips this)
@@ -266,22 +254,9 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		},
 	});
 
-	// Parse audience category scroller
-	fn parse_audience_scroller(resp: Response) -> Vec<aidoku::Link> {
-		if let Ok(response) =
-			resp.get_json_owned::<crate::models::ApiResponse<crate::models::FilterData>>()
-			&& let Some(data) = response.data
-		{
-			return data.comic_list.into_iter().map(Into::into).collect();
-		}
-		Vec::new()
-	}
-
-	let shounen_links = if let Some(resp) = resp_shounen {
-		parse_audience_scroller(resp)
-	} else {
-		Vec::new()
-	};
+	let shounen_links = resp_shounen
+		.map(parse_filter_response)
+		.unwrap_or_default();
 	components.push(HomeComponent {
 		title: Some("少年漫画".into()),
 		subtitle: None,
@@ -295,11 +270,9 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		},
 	});
 
-	let shoujo_links = if let Some(resp) = resp_shoujo {
-		parse_audience_scroller(resp)
-	} else {
-		Vec::new()
-	};
+	let shoujo_links = resp_shoujo
+		.map(parse_filter_response)
+		.unwrap_or_default();
 	components.push(HomeComponent {
 		title: Some("少女漫画".into()),
 		subtitle: None,
@@ -313,11 +286,9 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		},
 	});
 
-	let seinen_links = if let Some(resp) = resp_seinen {
-		parse_audience_scroller(resp)
-	} else {
-		Vec::new()
-	};
+	let seinen_links = resp_seinen
+		.map(parse_filter_response)
+		.unwrap_or_default();
 	components.push(HomeComponent {
 		title: Some("男青漫画".into()),
 		subtitle: None,
@@ -331,11 +302,9 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 		},
 	});
 
-	let josei_links = if let Some(resp) = resp_josei {
-		parse_audience_scroller(resp)
-	} else {
-		Vec::new()
-	};
+	let josei_links = resp_josei
+		.map(parse_filter_response)
+		.unwrap_or_default();
 	components.push(HomeComponent {
 		title: Some("女青漫画".into()),
 		subtitle: None,
@@ -352,8 +321,36 @@ pub fn get_home_layout() -> Result<HomeLayout> {
 	Ok(HomeLayout { components })
 }
 
+// === Private Helpers ===
+
+/// Parse rank API response into Manga list
+fn parse_rank_response(resp: Response) -> Vec<Manga> {
+	if let Ok(response) =
+		resp.get_json_owned::<crate::models::ApiResponse<Vec<crate::models::RankItem>>>()
+		&& let Some(list) = response.data
+	{
+		return list
+			.into_iter()
+			.filter(|item| item.comic_id > 0)
+			.map(Into::into)
+			.collect();
+	}
+	Vec::new()
+}
+
+/// Parse filter API response into Link list (for audience scrollers)
+fn parse_filter_response(resp: Response) -> Vec<aidoku::Link> {
+	if let Ok(response) =
+		resp.get_json_owned::<crate::models::ApiResponse<crate::models::FilterData>>()
+		&& let Some(data) = response.data
+	{
+		return data.comic_list.into_iter().map(Into::into).collect();
+	}
+	Vec::new()
+}
+
+/// Parse manga news HTML document into Link list
 /// HTML structure: .briefnews_con_li contains .dec_img img (image) and h3 a (link)
-/// Used for parsing the news section which is not available via JSON API
 fn parse_manga_news_doc(doc: Document) -> Vec<aidoku::Link> {
 	let mut links = Vec::new();
 
