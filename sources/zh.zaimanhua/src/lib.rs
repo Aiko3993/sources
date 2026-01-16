@@ -301,7 +301,7 @@ impl DynamicSettings for Zaimanhua {
 			let (level_str, status_str, level_warning) = if let Some(user_cache) = settings::get_user_cache() {
 				let checkin_status = if user_cache.is_sign { "已签到" } else { "未签到" };
 				let warning = if user_cache.level < 1 {
-					Some("※ 增强浏览需要等级达到 Lv.1 (绑定手机号码即可使用)")
+					Some("※ 增强浏览需要等级达到 Lv.1 可用 (绑定手机号码)")
 				} else {
 					None
 				};
