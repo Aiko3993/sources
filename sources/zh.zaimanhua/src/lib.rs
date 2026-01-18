@@ -33,7 +33,7 @@ struct Zaimanhua;
 
 impl Source for Zaimanhua {
 	fn new() -> Self {
-		set_rate_limit(100, 1, TimeUnit::Seconds);
+		set_rate_limit(30, 1, TimeUnit::Seconds);
 		Self
 	}
 
