@@ -8,7 +8,7 @@ use aidoku::{
 	Result, Setting, Source,
 	alloc::{String, Vec, format, string::ToString},
 	helpers::uri::QueryParameters,
-	imports::net::{Request, set_rate_limit, TimeUnit},
+	imports::net::Request,
 	prelude::*,
 };
 
@@ -33,7 +33,6 @@ struct Zaimanhua;
 
 impl Source for Zaimanhua {
 	fn new() -> Self {
-		set_rate_limit(30, 1, TimeUnit::Seconds);
 		Self
 	}
 
