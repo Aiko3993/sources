@@ -302,13 +302,14 @@ impl JMComic {
 fn block_ctx(api: Option<&ApiContext>) -> BlockState {
 	let mut entries = settings::blocked_entries();
 	if let Some(api) = api {
-		for i in 0..entries.len() {
-			if entries[i].chars().all(|c| c.is_ascii_digit()) {
-				continue;
-			}
+		let keywords: Vec<String> = entries
+			.iter()
+			.filter(|e| !e.chars().all(|c| c.is_ascii_digit()))
+			.cloned()
+			.collect();
+		for kw in &keywords {
 			for page in 1..=2 {
-				if let Ok(r) = api.get::<SearchResp>(&net::url::search(&entries[i], "mr", "", page))
-				{
+				if let Ok(r) = api.get::<SearchResp>(&net::url::search(kw, "mr", "", page)) {
 					entries.extend(r.content.into_iter().map(|i| i.id));
 				}
 			}
