@@ -1,8 +1,8 @@
 {
 	"info": {
-		"id": "zh.jmcomic",
-		"name": "禁漫天堂",
-		"version": 1,
+		"id": "zh.jmcomic.dev",
+		"name": "禁漫天堂-dev",
+		"version": 2,
 		"languages": [
 			"zh"
 		],
@@ -15,8 +15,8 @@
 			"name": "最新漫画"
 		},
 		{
-			"id": "o:mv",
-			"name": "最多收藏"
+			"id": "o:tf",
+			"name": "最多爱心"
 		}
 	],
 	"config": {
